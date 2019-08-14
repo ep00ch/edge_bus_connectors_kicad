@@ -127,10 +127,10 @@ class PadEdgeConArray(PA.PadArray):
                 
                 pad = self.GetPad(padnum == 0, pos)     # in super
                 pad.SetName(self.GetName((lineodd*self.padCount)+padnum))
-                if linenum > 0 :# and linenum < self.lineCount-1:
-                    pad.SetLayerSet(pad.ConnSMDMask() )
-                    dc.SetLayer(pcbnew.B_Cu)
-
+                if linenum > 0 :
+                    #dc.SetLayer(pcbnew.B_Cu)
+                    if not linenum == self.lineCount-2:
+                        pad.SetLayerSet( pcbnew.FlipLayerMask( pad.ConnSMDMask() ))
 
                 self.AddPad(pad)
                 
@@ -139,6 +139,11 @@ class PadEdgeConArray(PA.PadArray):
                 # Connect TH to finger.
                 if self.linePitch > 0 :
                     if str(padnum+1) in self.fatTrace :
+                        if lineodd == 0 :
+                            dc.SetLayer(pcbnew.F_Cu)
+                        else:
+                            dc.SetLayer(pcbnew.B_Cu)
+
                         dc.SetLineThickness(viaHeight)
                         dc.VLine(pos.x, pos.y, (self.linePitch*3.25))    # Down line
                         dc.SetLineThickness(pcbnew.FromMM(.5))
@@ -147,6 +152,7 @@ class PadEdgeConArray(PA.PadArray):
                         dc.VLine(finX, finY, -(self.linePitch*2.25))    # Down line
 
                     else :
+                        dc.SetLayer(pcbnew.B_Cu)
                         if self.stagger > 0 :
                             dc.VLine(pos.x, pos.y, strgtLen)              # Down line
                             dc.Line(pos.x, pos.y+strgtLen,
@@ -162,8 +168,8 @@ class PadEdgeConArray(PA.PadArray):
                                 p = viaHeight*2
 
                             x = self.linePitch
-                            r = (((x**2)/p)+p)/2
-                            a = math.asin(x/r)
+                            #r = (((x**2)/p)+p)/2
+                            #a = math.asin(x/r)
                                 #dc.Arc((posX-r+p), pos.y + x,
                                 #posX, pos.y, a*573)
                             #dc.VLine(posX+p, pos.y+x, connPitch)
