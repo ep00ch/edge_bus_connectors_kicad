@@ -130,10 +130,10 @@ class PadEdgeConArray(PA.PadArray):
                     pad = self.GetPad(padnum == 0, pos)     # in super
                     pad.SetName(self.GetName((sidenum*self.posCount)+padnum))
                     
-                    if dc.GetLayer() == pcbnew.F_Cu or (sidenum == 0 and self.preferBot and connum == self.connCount-1) :
-                        pad.SetLayerSet( pad.StandardMask() )
-                    elif dc.GetLayer() == pcbnew.B_Cu:
-                        pad.SetLayerSet( pcbnew.FlipLayerMask( pad.ConnSMDMask() ))
+                    #if dc.GetLayer() == pcbnew.F_Cu or (sidenum == 0 and self.preferBot and connum == self.connCount-1) :
+                    #   pad.SetLayerSet( pad.StandardMask() )
+                    #elif dc.GetLayer() == pcbnew.B_Cu:
+                    #   pad.SetLayerSet( pcbnew.FlipLayerMask( pad.ConnSMDMask() ))
 
                     self.AddPad(pad)
 
@@ -143,11 +143,14 @@ class PadEdgeConArray(PA.PadArray):
                             if sidenum == 0:
                                 dc.SetLayer(pcbnew.F_Cu)
                             dc.SetLineThickness(viaHeight)
-                            dc.VLine(pos.x, pos.y, connPitch)    # Down line
+                            if connum == 0:
+                                dc.VLine(pos.x, pos.y, (self.linePitch*sidenum)+(self.linePitch*2))
+                            else:
+                                dc.VLine(pos.x, pos.y, connPitch)    # Down line
                             dc.SetLineThickness(pcbnew.FromMM(.5))
                         # Connect to finger on the front.
                         elif connum == 0 and sidenum == 0:
-                            dc.VLine(pos.x, pos.y, connPitch)    # Down line
+                            dc.VLine(pos.x, pos.y, self.linePitch*2)    # Down line
                         # Connect each pad in a bus.
                         else :
                             #dc.SetLayer(pcbnew.B_Cu)
@@ -155,7 +158,7 @@ class PadEdgeConArray(PA.PadArray):
                                 if sidenum and connum == 0:
                                     dc.VLine(pos.x, pos.y, self.linePitch) # Down line
                                     dc.Line(pos.x, pos.y+self.linePitch,
-                                            pos.x-self.stagger, pos.y+self.linePitch+(connPitch-self.linePitch))
+                                        pos.x-self.stagger, pos.y+self.linePitch+(connPitch-self.linePitch))
                                 else:
                                     dc.VLine(pos.x, pos.y, connPitch) # Down line
 
@@ -174,11 +177,7 @@ class PadEdgeConArray(PA.PadArray):
 
                 posY -= connPitch
 
-            #if self.stagger:
-            #posX-=hPadPitch
-            #else:
-            #posX+=self.padPitch
-            #dc.SetLayer(pcbnew.B_Cu)
+
 
 class CardEdgeWizard(FPWbase.FootprintWizard):
     conCountKey           = 'connector count'
@@ -244,8 +243,8 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         @param drill: the drill diameter
         """
         pad = PA.PadMaker(self.module).THRoundPad(pcbnew.FromMM(1.9), pcbnew.FromMM(.9))
-        pad.SetLayerSet( pad.ConnSMDMask() )
-        #pad.SetLayerSet( pad.StandardMask() )
+        #pad.SetLayerSet( pad.ConnSMDMask() )
+        pad.SetLayerSet( pad.StandardMask() )
 
         return pad
 
@@ -278,7 +277,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
                                 alpha_name, alpha_skip, "", stagger, False)
         array.AddPadsToModule(self.draw)
         
-        pad_offset_y = (pad_length/2)+(row_pitch*2.25)
+        pad_offset_y = (pad_length/2)+(row_pitch*2)
         pad = self.GetThru()
         array = PadEdgeConArray(pad, num_pos, num_cons, row_pitch, pad_pitch,
                                     alpha_name, alpha_skip, fat_traces, stagger,
