@@ -67,11 +67,14 @@ class PadEdgeConArray(PA.PadArray):
         # For number, left to right, then right to left from front.
         
         if self.alphaName:
-            if (aPadPos/self.posCount) >= 1 :
+            if aPadPos >= self.posCount :
                 # Use numbers right to left for back side.
-                self.alphaOffs = ord('@') # Reset alpha
                 return (aPadPos%self.posCount)+self.firstPadNum
             
+            if aPadPos == 0 :
+                # Reset the alpha offset for the new line
+                self.alphaOffs = ord('@') # Reset alpha
+                
             padord = self.firstPadNum + aPadPos + self.alphaOffs
             # Use numbers after all letters used.
             if padord > ord('z') :
@@ -128,15 +131,10 @@ class PadEdgeConArray(PA.PadArray):
                     pos = dc.TransformPoint(posX, posY)
                     
                     pad = self.GetPad(padnum == 0, pos)     # in super
-                    pad.SetName(self.GetName((sidenum*self.posCount)+padnum))
-                    
-                    #if dc.GetLayer() == pcbnew.F_Cu or (sidenum == 0 and self.preferBot and connum == self.connCount-1) :
-                    #   pad.SetLayerSet( pad.StandardMask() )
-                    #elif dc.GetLayer() == pcbnew.B_Cu:
-                    #   pad.SetLayerSet( pcbnew.FlipLayerMask( pad.ConnSMDMask() ))
-
+                    pad.SetName(self.GetName(( sidenum * self.posCount)+padnum))
                     self.AddPad(pad)
 
+                    # Draw buses only for the connector pads
                     if self.linePitch > 0 :
                         # Connect power with fat traces
                         if str(padnum+1) in self.fatTrace :
@@ -148,12 +146,11 @@ class PadEdgeConArray(PA.PadArray):
                             else:
                                 dc.VLine(pos.x, pos.y, connPitch)    # Down line
                             dc.SetLineThickness(pcbnew.FromMM(.5))
-                        # Connect to finger on the front.
+                        # Connect to front finger with shorter line.
                         elif connum == 0 and sidenum == 0:
                             dc.VLine(pos.x, pos.y, self.linePitch*2)    # Down line
                         # Connect each pad in a bus.
                         else :
-                            #dc.SetLayer(pcbnew.B_Cu)
                             if self.stagger > 0 :
                                 if sidenum and connum == 0:
                                     dc.VLine(pos.x, pos.y, self.linePitch) # Down line
@@ -164,9 +161,11 @@ class PadEdgeConArray(PA.PadArray):
 
                             else :
                                 if sidenum:
+                                    # Flip the trace so it does not interfere.
                                     dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
                                 p = self.padPitch/2
                                 if (p > (viaHeight*2)) :
+                                    # Limit for really wide pad pitches
                                     p = viaHeight*2
 
                                 x = self.linePitch
@@ -210,7 +209,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         self.AddParam("Pads", self.alphaSkipKey,    self.uString, "GIOQ")
 
         self.AddParam("Pads", self.padWidthKey,     self.uMM, 2.54)
-        self.AddParam("Pads", self.padLengthKey,    self.uMM, 10.0)
+        self.AddParam("Pads", self.padLengthKey,    self.uMM, 8.0)
         self.AddParam("Pads", self.padPitchKey,     self.uMM, 3.96)
         self.AddParam("Pads", self.rowSpacingKey,   self.uMM, 2.54*2)
         self.AddParam("Pads", self.staggerKey,      self.uBool, False)
