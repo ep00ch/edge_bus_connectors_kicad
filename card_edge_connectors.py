@@ -105,8 +105,6 @@ class PadEdgeConArray(PA.PadArray):
         pin1posY = self.centre.y
         dc.SetLineThickness(pcbnew.FromMM(.5))
         
-        viaHeight = (self.pad).GetSize().GetHeight()
-        
         connPitch = 3.25*self.linePitch
 
         maxrange = 2 if self.linePitch else 1
@@ -134,18 +132,23 @@ class PadEdgeConArray(PA.PadArray):
                     pad.SetName(self.GetName(( sidenum * self.posCount)+padnum))
                     self.AddPad(pad)
 
+                    viaWidth = pad.GetSize().GetWidth()
+                    viaHole = pad.GetDrillSize().GetWidth()
+                    wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
                     # Draw buses only for the connector pads
                     if self.linePitch > 0 :
                         # Connect power with fat traces
                         if str(padnum+1) in self.fatTrace :
+                            viaHole = pad.GetDrillSize().GetWidth()
                             if sidenum == 0:
                                 dc.SetLayer(pcbnew.F_Cu)
-                            dc.SetLineThickness(viaHeight)
+                            dc.SetLineThickness( wideWidth )
                             if connum == 0:
-                                dc.VLine(pos.x, pos.y, (self.linePitch*sidenum)+(self.linePitch*2))
+                                dc.VLine(pos.x, pos.y, (int(self.linePitch*sidenum)+(self.linePitch*2)))
                             else:
                                 dc.VLine(pos.x, pos.y, connPitch)    # Down line
                             dc.SetLineThickness(pcbnew.FromMM(.5))
+                            
                         # Connect to front finger with shorter line.
                         elif connum == 0 and sidenum == 0:
                             dc.VLine(pos.x, pos.y, self.linePitch*2)    # Down line
@@ -163,14 +166,16 @@ class PadEdgeConArray(PA.PadArray):
                                 if sidenum:
                                     # Flip the trace so it does not interfere.
                                     dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
-                                p = self.padPitch/2
-                                if (p > (viaHeight*2)) :
+                                xp = self.padPitch/2
+                                if (xp > viaWidth * 2) :
                                     # Limit for really wide pad pitches
-                                    p = viaHeight*2
+                                    xp = viaWidth*2
 
-                                x = self.linePitch
-                                dc.Line(pos.x, pos.y, pos.x+p, pos.y+connPitch-x)
-                                dc.Line(pos.x+p, pos.y+connPitch-x, finX, pos.y+connPitch)
+                                yp = self.linePitch
+                                w = (viaWidth/2)
+                                dc.Line(pos.x, pos.y, pos.x+xp, pos.y+connPitch-yp-w)
+                                dc.VLine(pos.x+xp, pos.y+connPitch-yp-w, viaWidth)
+                                dc.Line(pos.x+xp, pos.y+connPitch-yp+w, finX, pos.y+connPitch)
                                 if sidenum:
                                     dc.PopTransform()
 
@@ -234,14 +239,14 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         return pad
 
     def GetThru(self):
-        return PA.PadMaker(self.module).THRoundPad(pcbnew.FromMM(1.9), pcbnew.FromMM(.9))
+        return PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(80), pcbnew.FromMils(52))
 
     def GetConPad(self):
         """!
         A round non-plated though hole pad (NPTH)
         @param drill: the drill diameter
         """
-        pad = PA.PadMaker(self.module).THRoundPad(pcbnew.FromMM(1.9), pcbnew.FromMM(.9))
+        pad = PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(80), pcbnew.FromMils(52))
         #pad.SetLayerSet( pad.ConnSMDMask() )
         pad.SetLayerSet( pad.StandardMask() )
 
@@ -276,7 +281,9 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
                                 alpha_name, alpha_skip, "", stagger, False)
         array.AddPadsToModule(self.draw)
         
+        //pad_offset_y = (pad_length/2)+(row_pitch*1.5)
         pad_offset_y = (pad_length/2)+(row_pitch*2)
+
         pad = self.GetThru()
         array = PadEdgeConArray(pad, num_pos, num_cons, row_pitch, pad_pitch,
                                     alpha_name, alpha_skip, fat_traces, stagger,
