@@ -281,7 +281,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
                                 alpha_name, alpha_skip, "", stagger, False)
         array.AddPadsToModule(self.draw)
         
-        //pad_offset_y = (pad_length/2)+(row_pitch*1.5)
+        #pad_offset_y = (pad_length/2)+(row_pitch*1.5)
         pad_offset_y = (pad_length/2)+(row_pitch*2)
 
         pad = self.GetThru()
