@@ -276,7 +276,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
 
         # add in the pads
         pad = self.GetFinger()
-        #    def __init__(self, aPad, aPosCount, aconnCount, aLinePitch, aPadPitch,
+
         array = PadEdgeConArray(pad, num_pos, 1, 0, pad_pitch,
                                 alpha_name, alpha_skip, "", stagger, False)
         array.AddPadsToModule(self.draw)
@@ -295,7 +295,8 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         width =  (num_pos * pad_pitch)
         height = pcbnew.FromMM(5)
         #
-        #self.draw.SetLineThickness( pcbnew.FromMM( 0.12 ) ) #Default per KLC F5.1 as of 12/2018
+        #Default per KLC F5.1 as of 12/2018
+        #self.draw.SetLineThickness( pcbnew.FromMM( 0.12 ) )
         #
         ## Left part
         ##  --
