@@ -21,61 +21,45 @@ import pcbnew
 import FootprintWizardBase as FPWbase
 import PadArray as PA
 
-class PadEdgeConArray(PA.PadArray):
-    """ Creates an 2 sided edge connector and an array of Pads with
+class PadBusConArray(PA.PadGridArray):
+    alphaName = 1
+    alphaSkip = ""
+    alphaOffs = 0
+    
+    """ Creates an 2 sided edge connector or an array of through hole Pads with
         edge connector pad naming (letters on one side and numbers on the other).
         Options include:
             easily create a backplane by changing the connector count;
             numeric or alpha numeric numbering;
-            stagger the vias;
             fat traces, connected to both sides for power signals.
-
+    @param pad: the prototypical pad of the array
+    @param nx: number of pads in x-direction
+    @param ny: number of pads in y-direction
+    @param px: pitch in x-direction
+    @param py: pitch in y-direction
+    @param centre: array centre point
     """
-    def __init__(self, aPad, aPosCount, aConnCount, aLinePitch, aPadPitch,
-                        aAlphaName, aAlphaSkip, aFatTraces, aStagger, aPreferBot,
-                        aCentre=pcbnew.wxPoint(0, 0)):
+    def setNaming(self, alpha_name, alpha_skip):
+        self.alphaName = alpha_name
+        self.alphaSkip = alpha_skip
+    
+    
+    def NamingFunction(self, x, y):
         """
-        @param aPad         Template for all pads
-        @param aPosCount    Pad Position count
-        @param aConnCount   Number of connectors
-        @param aLinePitch   distance between lines
-        @param aPadPitch    distance between pads
-        @param aStagger     X stagger value for all odd lines
-        @param aPreferBot   Prefer traces and pads on bottom
-        @param aCentre      Center position
-        @param aAlphaName   Letters for pad names
-        @param aAlphaName   Letters to skip for pad names
-
-        """
-        super(PadEdgeConArray, self).__init__(aPad)
-
-        self.posCount = int(aPosCount)
-        self.connCount = int(aConnCount)
-        self.linePitch = aLinePitch
-        self.padPitch = aPadPitch
-        self.stagger = aStagger
-        self.centre = aCentre
-        self.alphaName = aAlphaName
-        self.alphaSkip = aAlphaSkip
-        self.fatTrace  = aFatTraces
-        self.alphaOffs = ord('@')
-        self.preferBot = aPreferBot
-
-
-    def NamingFunction(self, aPadPos):
-        # For letter, left to right from front for both rows.
         # For number, left to right, then right to left from front.
-        
+        @param x: the pad x index
+        @param y: the pad y index
+        """
         if self.alphaName:
-            if aPadPos >= self.posCount :
-                # Use numbers right to left for back side.
-                return (aPadPos%self.posCount)+self.firstPadNum
+            if y > 0 : #x >= self.nx :
+                # Use numbers left to right for back side.
+                return (x%self.nx)+self.firstPadNum
             
-            if aPadPos == 0 :
+            if x == 0 :
                 # Reset the alpha offset for the new line
                 self.alphaOffs = ord('@') # Reset alpha
                 
-            padord = self.firstPadNum + aPadPos + self.alphaOffs
+            padord = self.firstPadNum + x + self.alphaOffs
             # Use numbers after all letters used.
             if padord > ord('z') :
                 return padord - ord('z')
@@ -92,101 +76,103 @@ class PadEdgeConArray(PA.PadArray):
             return str(chr(padord))
         else :
             # Return the number.
-            if aPadPos >= self.posCount :
+            if x >= self.nx :
                 # Continue numbers right to left for back side.
-                return self.posCount-(aPadPos-self.posCount)+self.posCount
+                return self.nx-(x-self.nx)+self.nx
 
-            return self.firstPadNum + aPadPos
+            return self.firstPadNum + x
+            
+    def AddFlippedPadsToModule(self, dc):
+        """!
+        Create the pads and add them to the module with lettered pads on bottom.
+        @param dc: the drawing context
+        """
+        dc.TransformFlip(self.centre.x, self.centre.y, 2)
+        super(PadBusConArray, self).AddPadsToModule(dc)
+        dc.PopTransform()
 
-    # relocate the pad and add it as many times as we need
-    def AddPadsToModule(self, dc):
-        #pin1posX = self.centre.x - ((self.padPitch * (self.posCount // 2 - 1)) + self.stagger) / 2
-        pin1posX = self.centre.x - (self.padPitch * (self.posCount - 1)) / 2
-        pin1posY = self.centre.y
+
+    # Add bus lines as many times as we need
+    def AddBusToModule(self, dc, connPitch, fatTraces, preferBot, toEdge ):
+        """
+        # Add bus wires connecting the connetors and card edge.
+        @param dc: the drawing context
+        @param connPitch: the pitch of the connectors
+        @param fatTraces: array of pin names that need fat power traces connecting both sides of the connector
+        @param preferBot: put the bus wires on the bottom. fat traces remain on top and bottom
+        @param toEdge: set to true if this is the first connector, closest to card edge
+        """
+        pin1posX = self.centre.x - self.px * (self.nx - 1) / 2
+        pin1posY = self.centre.y - self.py * (self.ny - 1) / 2
+        #pin1posX = self.centre.x - ((self.px * (self.nx // 2 - 1)) + self.stagger) / 2
+
         dc.SetLineThickness(pcbnew.FromMM(.5))
         
-        connPitch = 3.25*self.linePitch
+        for sidenum in range(0, self.ny):
+            # move vertically upwards through rows from bottom
+            posY = pin1posY + ((self.ny - sidenum -1) * self.py)
 
-        maxrange = 2 if self.linePitch else 1
-        for sidenum in range(0, maxrange):
-            posY = pin1posY
+            for padnum in range(0, self.nx):
+                posX = pin1posX + (self.px * padnum)
+                pos = pcbnew.wxPoint(posX, posY)
+                
+                if sidenum :
+                    dc.SetLayer(pcbnew.B_Cu)
+                else :
+                    dc.SetLayer(pcbnew.F_Cu)
 
-            if sidenum == 0 :
-                dc.SetLayer(pcbnew.F_Cu)
-            elif sidenum > 0:
-                posY -=self.linePitch
-                dc.SetLayer(pcbnew.B_Cu)
-            finY = posY + connPitch
-
-            for connum in range(0, self.connCount):
-                for padnum in range(0, self.posCount):
+                viaWidth = self.pad.GetSize().GetWidth()
+                viaHole = self.pad.GetDrillSize().GetWidth()
+                wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
+                
+                # Connect power with straight, fat traces
+                if str(padnum+1) in fatTraces :
+                    dc.SetLineThickness( wideWidth )
+  
+                    if sidenum == 0 and toEdge:
+                        # Connect to back finger with shorter line.
+                        dc.VLine(pos.x, pos.y, connPitch-self.py)    # Down line
+                    else :
+                        dc.VLine(pos.x, pos.y, connPitch)    # Down line
                     
-                    if sidenum == 0 and self.preferBot and connum > 0 :
+                    dc.SetLineThickness(pcbnew.FromMM(.5))
+
+                # Connect to front finger with shorter line on last row
+                elif sidenum == 0 and toEdge:
+                    dc.VLine(pos.x, pos.y, connPitch-self.py)    # Down line
+                        
+                # Connect to next pad with a bent line.
+                else :
+                    if preferBot :
                         dc.SetLayer(pcbnew.B_Cu)
-                    
-                    finX = pin1posX + (self.padPitch * padnum)
-                    posX = finX + (self.stagger * sidenum)
-                    pos = dc.TransformPoint(posX, posY)
-                    
-                    pad = self.GetPad(padnum == 0, pos)     # in super
-                    pad.SetName(self.GetName(( sidenum * self.posCount)+padnum))
-                    self.AddPad(pad)
+                        
+                    if sidenum == 0 :
+                        # Flip the trace so it does not interfere.
+                        dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
+                        
+                    xp = self.px/2
+                    if (xp > viaWidth * 2) :
+                        # Limit for really wide pad pitches
+                        xp = viaWidth*2
 
-                    viaWidth = pad.GetSize().GetWidth()
-                    viaHole = pad.GetDrillSize().GetWidth()
-                    wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
-                    # Draw buses only for the connector pads
-                    if self.linePitch > 0 :
-                        # Connect power with fat traces
-                        if str(padnum+1) in self.fatTrace :
-                            viaHole = pad.GetDrillSize().GetWidth()
-                            if sidenum == 0:
-                                dc.SetLayer(pcbnew.F_Cu)
-                            dc.SetLineThickness( wideWidth )
-                            if connum == 0:
-                                dc.VLine(pos.x, pos.y, (int(self.linePitch*sidenum)+(self.linePitch*2)))
-                            else:
-                                dc.VLine(pos.x, pos.y, connPitch)    # Down line
-                            dc.SetLineThickness(pcbnew.FromMM(.5))
-                            
-                        # Connect to front finger with shorter line.
-                        elif connum == 0 and sidenum == 0:
-                            dc.VLine(pos.x, pos.y, self.linePitch*2)    # Down line
-                        # Connect each pad in a bus.
-                        else :
-                            if self.stagger > 0 :
-                                if sidenum and connum == 0:
-                                    dc.VLine(pos.x, pos.y, self.linePitch) # Down line
-                                    dc.Line(pos.x, pos.y+self.linePitch,
-                                        pos.x-self.stagger, pos.y+self.linePitch+(connPitch-self.linePitch))
-                                else:
-                                    dc.VLine(pos.x, pos.y, connPitch) # Down line
+                    yp = self.py
+                    w = (viaWidth/2)
+                    dc.Line(pos.x, pos.y, pos.x-xp, pos.y+yp-w)
+                    dc.VLine(pos.x-xp, pos.y+yp-w, viaWidth)
+                    dc.Line(pos.x-xp, pos.y+yp+w, pos.x, pos.y+connPitch)
 
-                            else :
-                                if sidenum:
-                                    # Flip the trace so it does not interfere.
-                                    dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
-                                xp = self.padPitch/2
-                                if (xp > viaWidth * 2) :
-                                    # Limit for really wide pad pitches
-                                    xp = viaWidth*2
-
-                                yp = self.linePitch
-                                w = (viaWidth/2)
-                                dc.Line(pos.x, pos.y, pos.x+xp, pos.y+connPitch-yp-w)
-                                dc.VLine(pos.x+xp, pos.y+connPitch-yp-w, viaWidth)
-                                dc.Line(pos.x+xp, pos.y+connPitch-yp+w, finX, pos.y+connPitch)
-                                if sidenum:
-                                    dc.PopTransform()
-
-                posY -= connPitch
-
+                    #dc.Line(pos.x, pos.y, pos.x+xp, pos.y-connPitch-yp-w)
+                    #dc.VLine(pos.x+xp, pos.y+connPitch-yp-w, viaWidth)
+                    #dc.Line(pos.x+xp, pos.y+connPitch-yp+w, finX, pos.y+connPitch)
+                    if sidenum == 0:
+                        dc.PopTransform()
 
 
 class CardEdgeWizard(FPWbase.FootprintWizard):
     conCountKey           = 'connector count'
+    conSpacingKey         = 'connector spacing'
     conBottomKey          = 'prefer bottom traces'
-    padCountKey           = 'position count'
+    posCountKey           = 'position count'
     alphaNameKey          = 'alpha name'
     alphaSkipKey          = 'skip alpha'
     rowSpacingKey         = 'row spacing'
@@ -194,8 +180,9 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
     padWidthKey           = 'pad width'
     padPitchKey           = 'pad pitch'
     fatTraceKey           = 'fat traces'
-    staggerKey            = 'stagger vias'
+    #staggerKey            = 'stagger vias'
     #    pinNames              = "Card_Edge_Connector"
+    padNames = ''
     
     def GetName(self):
         return "Card Edge Connector"
@@ -206,9 +193,10 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
     def GenerateParameterList(self):
         # defaults for a EXORbus
         self.AddParam("Connectors", self.conCountKey,self.uInteger, 8)
+        self.AddParam("Connectors", self.conSpacingKey,self.uMM, 19.05)
         self.AddParam("Connectors", self.conBottomKey,self.uBool, False)
 
-        self.AddParam("Pads", self.conCountKey,     self.uInteger, 43, multiple=1)
+        self.AddParam("Pads", self.posCountKey,     self.uInteger, 43, multiple=1)
         self.AddParam("Pads", self.alphaNameKey,    self.uBool, True)
         self.AddParam("Pads", self.fatTraceKey,     self.uString, "1 2 3 11 16 20 21 22 41 42 43 9 17 24")
         self.AddParam("Pads", self.alphaSkipKey,    self.uString, "GIOQ")
@@ -217,13 +205,13 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         self.AddParam("Pads", self.padLengthKey,    self.uMM, 8.0)
         self.AddParam("Pads", self.padPitchKey,     self.uMM, 3.96)
         self.AddParam("Pads", self.rowSpacingKey,   self.uMM, 2.54*2)
-        self.AddParam("Pads", self.staggerKey,      self.uBool, False)
+        #self.AddParam("Pads", self.staggerKey,      self.uBool, False)
 
     def CheckParameters(self):
         pass    # All checks are already taken care of!
 
     def GetValue(self):
-        pad_count = self.parameters["Pads"][self.conCountKey]
+        pad_count = self.parameters["Pads"][self.posCountKey]
         return "%s-%d" % ("Card_Edge_Connector", pad_count)
 
     def GetFinger(self):
@@ -239,7 +227,8 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         return pad
 
     def GetThru(self):
-        return PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(80), pcbnew.FromMils(52))
+        return PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(70.86614), pcbnew.FromMils(35.43307))
+        #return PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(80), pcbnew.FromMils(52))
 
     def GetConPad(self):
         """!
@@ -256,40 +245,58 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         pads = self.parameters["Pads"]
         cons = self.parameters["Connectors"]
         num_cons = cons[self.conCountKey]
+        con_pitch = cons[self.conSpacingKey]
         pref_bottom = cons[self.conBottomKey]
 
-        num_pos = pads[self.conCountKey]
+        num_pos = pads[self.posCountKey]
         pad_length = pads[self.padLengthKey]
         row_pitch = pads[self.rowSpacingKey]
         pad_pitch = pads[self.padPitchKey]
         pad_width = pads[self.padWidthKey]
         fat_traces= pads[self.fatTraceKey].split()
-        stagger = (pad_pitch/2) if pads[self.staggerKey] else 0
-
-        alpha_name = pads[self.alphaNameKey]
-        alpha_skip = pads[self.alphaSkipKey]
+        #stagger = (pad_pitch/2) if pads[self.staggerKey] else 0
         
         # Use value to fill the modules description
         desc = self.GetValue()
         self.module.SetDescription(desc)
         self.module.SetAttributes(1)
 
-        # add in the pads
+        # add in the finger pads
         pad = self.GetFinger()
 
-        array = PadEdgeConArray(pad, num_pos, 1, 0, pad_pitch,
-                                alpha_name, alpha_skip, "", stagger, False)
+        array = PadBusConArray(pad, num_pos, 1, pad_pitch, 0)
+        array.setNaming(pads[self.alphaNameKey], pads[self.alphaSkipKey])
         array.AddPadsToModule(self.draw)
         
-        #pad_offset_y = (pad_length/2)+(row_pitch*1.5)
-        pad_offset_y = (pad_length/2)+(row_pitch*2)
-
+        # add in the connector pads
         pad = self.GetThru()
-        array = PadEdgeConArray(pad, num_pos, num_cons, row_pitch, pad_pitch,
-                                    alpha_name, alpha_skip, fat_traces, stagger,
-                                    pref_bottom,
-                                    aCentre=pcbnew.wxPoint(0, -pad_offset_y))
-        array.AddPadsToModule(self.draw)
+        num_rows = 2 if num_cons else 1
+        #array = PA.PadGridArray(pad, num_pos, num_rows, pad_pitch, row_pitch)
+        
+        #for connum in range(0, num_cons):
+        #    self.draw.TransformTranslate(0, -con_pitch, 1)
+        #    array.AddPadsToModule(self.draw)
+
+        self.draw.ResetTransform()
+        
+        if (num_cons == 0 ):
+            # if no connectors, at least add through-hole connections to the fromt pads
+            array = PadBusConArray(pad, num_pos, 1, pad_pitch, 0)
+            num_cons = 1
+        else :
+            array = PadBusConArray(pad, num_pos, 2, pad_pitch, row_pitch)
+                                    #alpha_name, alpha_skip, fat_traces, stagger,
+                                    #pref_bottom,
+                                    
+        array.setNaming(pads[self.alphaNameKey], pads[self.alphaSkipKey])
+        
+        for connum in range(0, num_cons):
+            self.draw.TransformTranslate(0, -con_pitch, 1)
+            array.AddFlippedPadsToModule(self.draw)
+            array.AddBusToModule(self.draw, con_pitch, fat_traces, cons[self.conBottomKey], (connum == 0))
+
+        self.draw.ResetTransform()
+
 
         ## Draw connector outlineChassis
         width =  (num_pos * pad_pitch)
