@@ -22,7 +22,7 @@ import FootprintWizardBase as FPWbase
 import PadArray as PA
 
 class PadBusConArray(PA.PadGridArray):
-    alphaName = 1
+    alphaName = True
     alphaSkip = ""
     alphaOffs = 0
     
@@ -51,7 +51,7 @@ class PadBusConArray(PA.PadGridArray):
         @param y: the pad y index
         """
         if self.alphaName:
-            if y > 0 : #x >= self.nx :
+            if y or x >= self.nx: #x >= self.nx :
                 # Use numbers left to right for back side.
                 return (x%self.nx)+self.firstPadNum
             
@@ -76,24 +76,10 @@ class PadBusConArray(PA.PadGridArray):
             return str(chr(padord))
         else :
             # Return the number.
-            if x >= self.nx :
-                # Continue numbers right to left for back side.
-                return self.nx-(x-self.nx)+self.nx
-
-            return self.firstPadNum + x
-            
-    def AddFlippedPadsToModule(self, dc):
-        """!
-        Create the pads and add them to the module with lettered pads on bottom.
-        @param dc: the drawing context
-        """
-        dc.TransformFlip(self.centre.x, self.centre.y, 2)
-        super(PadBusConArray, self).AddPadsToModule(dc)
-        dc.PopTransform()
-
+            return self.firstPadNum + (self.nx*y + x)
 
     # Add bus lines as many times as we need
-    def AddBusToModule(self, dc, connPitch, fatTraces, preferBot, toEdge ):
+    def AddBusToModule(self, dc, connPitch, fatTraces, preferBot, staggerPad, toEdge ):
         """
         # Add bus wires connecting the connetors and card edge.
         @param dc: the drawing context
@@ -104,68 +90,75 @@ class PadBusConArray(PA.PadGridArray):
         """
         pin1posX = self.centre.x - self.px * (self.nx - 1) / 2
         pin1posY = self.centre.y - self.py * (self.ny - 1) / 2
-        #pin1posX = self.centre.x - ((self.px * (self.nx // 2 - 1)) + self.stagger) / 2
-
+ 
         dc.SetLineThickness(pcbnew.FromMM(.5))
         
-        for sidenum in range(0, self.ny):
-            # move vertically upwards through rows from bottom
-            posY = pin1posY + ((self.ny - sidenum -1) * self.py)
+        for row in range(0, self.ny):
+            # move vertically down through rows
+            posY = pin1posY + (row * self.py)
 
             for padnum in range(0, self.nx):
-                posX = pin1posX + (self.px * padnum)
-                pos = pcbnew.wxPoint(posX, posY)
-                
-                if sidenum :
+                if row == 0 :
                     dc.SetLayer(pcbnew.B_Cu)
+                    stagger = 0
+
                 else :
                     dc.SetLayer(pcbnew.F_Cu)
-
+                    stagger = staggerPad
+                    
+                posX = pin1posX + (self.px * padnum) + stagger
+                pos = pcbnew.wxPoint(posX, posY)
+                
                 viaWidth = self.pad.GetSize().GetWidth()
                 viaHole = self.pad.GetDrillSize().GetWidth()
                 wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
                 
-                # Connect power with straight, fat traces
+                # Connect power with straight, wider traces
                 if str(padnum+1) in fatTraces :
                     dc.SetLineThickness( wideWidth )
-  
-                    if sidenum == 0 and toEdge:
+                    
+                    if row and toEdge:
                         # Connect to back finger with shorter line.
-                        dc.VLine(pos.x, pos.y, connPitch-self.py)    # Down line
+                        dc.Line(pos.x, pos.y, pos.x-stagger, pos.y+connPitch)
+
                     else :
+                        # Connect to back finger with down line.
                         dc.VLine(pos.x, pos.y, connPitch)    # Down line
                     
                     dc.SetLineThickness(pcbnew.FromMM(.5))
 
-                # Connect to front finger with shorter line on last row
-                elif sidenum == 0 and toEdge:
-                    dc.VLine(pos.x, pos.y, connPitch-self.py)    # Down line
-                        
+                elif row and toEdge:
+                    # Connect to back finger with shorter line.
+                    dc.Line(pos.x, pos.y, pos.x-stagger, pos.y+connPitch)
+
                 # Connect to next pad with a bent line.
                 else :
                     if preferBot :
                         dc.SetLayer(pcbnew.B_Cu)
                         
-                    if sidenum == 0 :
+                    if row :
                         # Flip the trace so it does not interfere.
                         dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
                         
-                    xp = self.px/2
-                    if (xp > viaWidth * 2) :
-                        # Limit for really wide pad pitches
-                        xp = viaWidth*2
-
+                    if staggerPad :
+                        xp = 0
+                    else :
+                        # Limit arch size for really wide pad pitches
+                        xpMax = viaWidth*2
+                        xpMin = self.px/2
+                        xp =  xpMin if (xpMin < xpMax) else xpMax
                     yp = self.py
+                    
                     w = (viaWidth/2)
+                    #Line from pad to top of area between pads
                     dc.Line(pos.x, pos.y, pos.x-xp, pos.y+yp-w)
+                    #Line from top to bottom of area between lower pad
                     dc.VLine(pos.x-xp, pos.y+yp-w, viaWidth)
+                    #Line bottom of area between pads to lower connector
                     dc.Line(pos.x-xp, pos.y+yp+w, pos.x, pos.y+connPitch)
 
-                    #dc.Line(pos.x, pos.y, pos.x+xp, pos.y-connPitch-yp-w)
-                    #dc.VLine(pos.x+xp, pos.y+connPitch-yp-w, viaWidth)
-                    #dc.Line(pos.x+xp, pos.y+connPitch-yp+w, finX, pos.y+connPitch)
-                    if sidenum == 0:
-                        dc.PopTransform()
+                    if row :
+                        dc.PopTransform()   # remove the TransformFlip
 
 
 class CardEdgeWizard(FPWbase.FootprintWizard):
@@ -180,7 +173,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
     padWidthKey           = 'pad width'
     padPitchKey           = 'pad pitch'
     fatTraceKey           = 'fat traces'
-    #staggerKey            = 'stagger vias'
+    staggerKey            = 'stagger vias'
     #    pinNames              = "Card_Edge_Connector"
     padNames = ''
     
@@ -205,7 +198,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         self.AddParam("Pads", self.padLengthKey,    self.uMM, 8.0)
         self.AddParam("Pads", self.padPitchKey,     self.uMM, 3.96)
         self.AddParam("Pads", self.rowSpacingKey,   self.uMM, 2.54*2)
-        #self.AddParam("Pads", self.staggerKey,      self.uBool, False)
+        self.AddParam("Pads", self.staggerKey,      self.uBool, False)
 
     def CheckParameters(self):
         pass    # All checks are already taken care of!
@@ -235,8 +228,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         A round non-plated though hole pad (NPTH)
         @param drill: the drill diameter
         """
-        pad = PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(80), pcbnew.FromMils(52))
-        #pad.SetLayerSet( pad.ConnSMDMask() )
+        pad = PA.PadMaker(self.module).THRoundPad(pcbnew.FromMils(90), pcbnew.FromMils(52))
         pad.SetLayerSet( pad.StandardMask() )
 
         return pad
@@ -254,7 +246,7 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         pad_pitch = pads[self.padPitchKey]
         pad_width = pads[self.padWidthKey]
         fat_traces= pads[self.fatTraceKey].split()
-        #stagger = (pad_pitch/2) if pads[self.staggerKey] else 0
+        stagger = (pad_pitch/2) if pads[self.staggerKey] else 0
         
         # Use value to fill the modules description
         desc = self.GetValue()
@@ -269,33 +261,57 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         array.AddPadsToModule(self.draw)
         
         # add in the connector pads
-        pad = self.GetThru()
+        pad = self.GetConPad()
         num_rows = 2 if num_cons else 1
         #array = PA.PadGridArray(pad, num_pos, num_rows, pad_pitch, row_pitch)
-        
-        #for connum in range(0, num_cons):
-        #    self.draw.TransformTranslate(0, -con_pitch, 1)
-        #    array.AddPadsToModule(self.draw)
 
-        self.draw.ResetTransform()
+        #self.draw.ResetTransform()
         
-        if (num_cons == 0 ):
-            # if no connectors, at least add through-hole connections to the fromt pads
-            array = PadBusConArray(pad, num_pos, 1, pad_pitch, 0)
-            num_cons = 1
-        else :
+        if (stagger):
             array = PadBusConArray(pad, num_pos, 2, pad_pitch, row_pitch)
-                                    #alpha_name, alpha_skip, fat_traces, stagger,
-                                    #pref_bottom,
-                                    
-        array.setNaming(pads[self.alphaNameKey], pads[self.alphaSkipKey])
-        
-        for connum in range(0, num_cons):
-            self.draw.TransformTranslate(0, -con_pitch, 1)
-            array.AddFlippedPadsToModule(self.draw)
-            array.AddBusToModule(self.draw, con_pitch, fat_traces, cons[self.conBottomKey], (connum == 0))
 
-        self.draw.ResetTransform()
+            array1 = PadBusConArray(pad, num_pos, 1, pad_pitch, 0, pcbnew.wxPoint(0, -row_pitch/2))
+            array1.setNaming(0, pads[self.alphaSkipKey])
+            array1.firstPadNum = num_pos+1
+            
+            array2 = PadBusConArray(pad, num_pos, 1, pad_pitch, 0, pcbnew.wxPoint(stagger, row_pitch/2))
+            array2.setNaming(pads[self.alphaNameKey], pads[self.alphaSkipKey])
+            
+            for connum in range(0, num_cons):
+                    self.draw.TransformTranslate(0, -con_pitch, 1)
+                    
+                    array1.AddPadsToModule(self.draw)
+                    array2.AddPadsToModule(self.draw)
+
+                    array.AddBusToModule(self.draw, con_pitch, fat_traces,
+                        cons[self.conBottomKey], stagger, (connum == 0))
+            
+            self.draw.ResetTransform()
+
+        else :
+            if (num_cons == 0 ):
+                # if no bus connectors, at least add through-hole connections to the front pads
+                array = PadBusConArray(pad, num_pos, 1, pad_pitch, 0)
+                num_cons = 1
+            else :
+                array = PadBusConArray(pad, num_pos, 2, pad_pitch, row_pitch)
+                                    
+            array.setNaming(pads[self.alphaNameKey], pads[self.alphaSkipKey])
+        
+            for connum in range(0, num_cons):
+                # Move to next connector.
+                self.draw.TransformTranslate(0, -con_pitch, 1)
+
+                # Put lettered pads on bottom.
+                self.draw.TransformFlip(array.centre.x, array.centre.y, 2)
+                array.AddPadsToModule(self.draw)
+                self.draw.PopTransform()
+            
+                # Add the bus lines.
+                array.AddBusToModule(self.draw, con_pitch, fat_traces,
+                    cons[self.conBottomKey], stagger, (connum == 0))
+
+            self.draw.ResetTransform()
 
 
         ## Draw connector outlineChassis
