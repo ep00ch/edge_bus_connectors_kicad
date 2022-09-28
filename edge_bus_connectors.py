@@ -88,78 +88,75 @@ class PadBusConArray(PA.PadGridArray):
         @param preferBot: put the bus wires on the bottom. fat traces remain on top and bottom
         @param toEdge: set to true if this is the first connector, closest to card edge
         """
+        viaWidth = self.pad.GetSize().GetWidth()
+        viaHole = self.pad.GetDrillSize().GetWidth()
+        wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
+                
         pin1posX = self.centre.x - self.px * (self.nx - 1) / 2
         pin1posY = self.centre.y - self.py * (self.ny - 1) / 2
- 
-        dc.SetLineThickness(pcbnew.FromMM(.5))
-        
+         
         for row in range(0, self.ny):
             # move vertically down through rows
             posY = pin1posY + (row * self.py)
 
             for padnum in range(0, self.nx):
+                fat = False
+                dc.SetLineThickness(pcbnew.FromMM(.5))
+
                 if row == 0 :
                     dc.SetLayer(pcbnew.B_Cu)
                     stagger = 0
-
                 else :
                     dc.SetLayer(pcbnew.F_Cu)
-                    stagger = staggerPad
+                    stagger = staggerPad 
                     
+                # Connect power with wider traces
+                if str(padnum+1) in fatTraces :
+                    fat = True
+                    dc.SetLineThickness( wideWidth )
+                    # traces between vias, gives more clearance
+                    if row :
+                        stagger -= staggerPad/4
+                    else :
+                        stagger += staggerPad/4
+                        
                 posX = pin1posX + (self.px * padnum) + stagger
                 pos = pcbnew.wxPoint(posX, posY)
                 
-                viaWidth = self.pad.GetSize().GetWidth()
-                viaHole = self.pad.GetDrillSize().GetWidth()
-                wideWidth = int( viaHole + (( viaWidth - viaHole)/2) )
-                
-                # Connect power with straight, wider traces
-                if str(padnum+1) in fatTraces :
-                    dc.SetLineThickness( wideWidth )
-                    
-                    if row and toEdge:
-                        # Connect to back finger with shorter line.
-                        dc.Line(pos.x, pos.y, pos.x-stagger, pos.y+connPitch)
-
-                    else :
-                        # Connect to back finger with down line.
-                        dc.VLine(pos.x, pos.y, connPitch)    # Down line
-                    
-                    dc.SetLineThickness(pcbnew.FromMM(.5))
-
-                elif row and toEdge:
-                    # Connect to back finger with shorter line.
-                    dc.Line(pos.x, pos.y, pos.x-stagger, pos.y+connPitch)
+                if row and toEdge :
+                    # Connect to front finger with shorter line.
+                    dc.Line(pos.x, pos.y, pos.x-stagger, pos.y+connPitch-self.py)
 
                 # Connect to next pad with a bent line.
                 else :
-                    if preferBot :
+                    if preferBot and not fat :
                         dc.SetLayer(pcbnew.B_Cu)
                         
                     if row :
                         # Flip the trace so it does not interfere.
                         dc.TransformFlip(pos.x, (pos.y+connPitch/2),3)
                         
-                    if staggerPad :
+                    if staggerPad or fat :
+                        # no bend
                         xp = 0
+                        
                     else :
-                        # Limit arch size for really wide pad pitches
+                        # Limit bend size for really wide pad pitches
                         xpMax = viaWidth*2
                         xpMin = self.px/2
                         xp =  xpMin if (xpMin < xpMax) else xpMax
                     yp = self.py
                     
                     w = (viaWidth/2)
-                    #Line from pad to top of area between pads
+                    #Line from pad to top of area between pads in next lower row
                     dc.Line(pos.x, pos.y, pos.x-xp, pos.y+yp-w)
-                    #Line from top to bottom of area between lower pad
+                    #Line from top to bottom of area between pads in next lower row
                     dc.VLine(pos.x-xp, pos.y+yp-w, viaWidth)
                     #Line bottom of area between pads to lower connector
                     dc.Line(pos.x-xp, pos.y+yp+w, pos.x, pos.y+connPitch)
 
                     if row :
                         dc.PopTransform()   # remove the TransformFlip
-
 
 class CardEdgeWizard(FPWbase.FootprintWizard):
     conCountKey           = 'connector count'
@@ -174,14 +171,14 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
     padPitchKey           = 'pad pitch'
     fatTraceKey           = 'fat traces'
     staggerKey            = 'stagger vias'
-    #    pinNames              = "Card_Edge_Connector"
+    #    pinNames              = "Card_Edge_Bus_Connector"
     padNames = ''
     
     def GetName(self):
-        return "Card Edge Connector"
+        return "Card Edge Bus Connector"
 
     def GetDescription(self):
-        return "Card Edge Connector, Footprint Wizard"
+        return "Card Edge Bus Connector, Footprint Wizard"
 
     def GenerateParameterList(self):
         # defaults for a EXORbus
@@ -215,8 +212,6 @@ class CardEdgeWizard(FPWbase.FootprintWizard):
         #pad.SetAttribute(pcbnew.PAD_ATTRIB_STANDARD)
         pad.SetAttribute( pcbnew.PAD_ATTRIB_CONN )
         pad.SetLayerSet( pad.StandardMask() )
-        #pad.SetLayerSet( pad.ConnSMDMask() )
-        #pad.SetLayerSet( pad.SMDMask() )
         return pad
 
     def GetThru(self):
